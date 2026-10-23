@@ -1023,9 +1023,14 @@ function dialogKode(kode) {
 }
 function dialogImporKode() {
   let teks = '';
+  const opsi = (v, jud, ket, cek) => '<label class="flex items-start gap-3 p-3 rounded-lg border border-outline-variant cursor-pointer"><input type="radio" name="imp-mode" value="' + v + '"' + (cek ? ' checked' : '') + ' class="mt-1"><span><b>' + jud + '</b><br><span class="text-body-sm text-text-secondary">' + ket + '</span></span></label>';
   const m = bukaModal({ judul: 'Impor Kode Arsip (CSV)', ukuran: 'md',
-    isi: '<div class="flex flex-col gap-3"><p class="text-body-md text-text-secondary">Pilih file CSV dengan kolom <b>kode, uraian, keterangan</b> (baris pertama boleh judul kolom). Kode yang sudah ada akan diperbarui, yang baru ditambahkan.</p>' +
-      '<input id="imp-file" type="file" accept=".csv,text/csv" class="input"><p id="imp-info" class="hint"></p><p id="imp-err" class="field-error min-h-[18px]" role="alert"></p></div>',
+    isi: '<div class="flex flex-col gap-3"><p class="text-body-md text-text-secondary">Pilih file CSV dengan kolom <b>kode, uraian, keterangan</b> (baris pertama boleh judul kolom).</p>' +
+      '<input id="imp-file" type="file" accept=".csv,text/csv" class="input"><p id="imp-info" class="hint"></p>' +
+      '<fieldset class="flex flex-col gap-2"><legend class="field-label">Cara impor</legend>' +
+      opsi('tambah', 'Tambah / perbarui', 'Kode lama tetap ada. Kode yang sama diperbarui uraiannya, kode baru ditambahkan.', true) +
+      opsi('ganti', 'Ganti seluruh daftar', 'Daftar lama dicadangkan otomatis ke sheet baru, lalu diganti seluruhnya dengan isi file. Gunakan saat beralih ke peraturan kode klasifikasi yang baru.', false) +
+      '</fieldset><p id="imp-err" class="field-error min-h-[18px]" role="alert"></p></div>',
     footer: '<button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="imp-go" disabled>' + ic('upload_file') + ' Impor</button>' });
   $('#imp-file', m).onchange = e => {
     const f = e.target.files[0]; if (!f) return;
@@ -1034,11 +1039,23 @@ function dialogImporKode() {
     rd.readAsText(f, 'utf-8');
   };
   $('#imp-go', m).onclick = async () => {
+    const mode = ($('input[name="imp-mode"]:checked', m) || {}).value || 'tambah';
+    if (mode === 'ganti') {
+      const ok = await konfirmasi('Ganti seluruh daftar kode?', 'Daftar kode yang sekarang akan diganti dengan isi file. Daftar lama tetap tersimpan sebagai cadangan di Spreadsheet. Surat yang memakai kode lama perlu disesuaikan kodenya.', 'Ya, ganti', true);
+      if (!ok) return;
+    }
     const b = $('#imp-go', m); setBusy(b, true, 'Mengimpor…');
     try {
-      const r = await callAuth('apiImportKode', teks);
+      const r = await callAuth('apiImportKode', teks, mode);
       if (!r.success) { $('#imp-err', m).textContent = r.message; setBusy(b, false); return; }
       tutupModal(m); toast(r.message, 'ok'); AppState.kode = null; await pastikanKode(); renderHasilKode();
+      const y = (r.data && r.data.yatim) || [];
+      if (y.length) {
+        bukaModal({ judul: 'Surat dengan kode lama', ukuran: 'md',
+          isi: '<p class="text-body-md text-text-secondary mb-3">Kode berikut masih dipakai surat, tetapi tidak ada di daftar baru. Buka surat terkait (menu Ubah) lalu pilih kode yang baru.</p>' +
+            '<ul class="divide-y divide-border-subtle">' + y.map(x => '<li class="py-2 flex items-center justify-between"><span class="kode-badge">' + esc(x.kode) + '</span><span class="text-body-md text-text-secondary">' + x.jumlah + ' surat</span></li>').join('') + '</ul>',
+          footer: '<button class="btn btn-primary" data-modal-close>Mengerti</button>' });
+      }
     } catch (e) { $('#imp-err', m).textContent = errMsg(e); setBusy(b, false); }
   };
 }
